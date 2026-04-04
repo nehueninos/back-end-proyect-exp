@@ -1,78 +1,111 @@
-import puppeteer from "puppeteer"
-import fs from "fs"
-import path from "path"
-import { generatePDFTemplate } from "../utils/generatePDFTemplate.js"
+import puppeteer from "puppeteer";
+import fs from "fs";
+import path from "path";
+import { generatePDFTemplate } from "../utils/generatePDFTemplate.js";
 import Denuncia from "../models/Denuncia.js";
 
+
+// =======================================
+// ✅ CREAR DENUNCIA (GUARDA EN DB)
+// =======================================
+export const crearDenuncia = async (req, res) => {
+  try {
+    const data = req.body;
+
+    if (!data) {
+      return res.status(400).json({ error: "Datos requeridos" });
+    }
+
+    // 🔢 número correlativo
+    const ultima = await Denuncia.findOne().sort({ numero: -1 });
+    const numero = ultima ? ultima.numero + 1 : 1;
+
+    const nuevaDenuncia = await Denuncia.create({
+      ...data,
+      numero,
+    });
+
+    res.status(201).json(nuevaDenuncia);
+
+  } catch (err) {
+    console.error("ERROR CREAR:", err);
+
+    res.status(500).json({
+      error: err.message || "Error al crear denuncia",
+    });
+  }
+};
+
+
+
+// =======================================
+// ✅ GENERAR PDF (NO GUARDA)
+// =======================================
 export const generarPDFDenuncia = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-try{
+    // 🔍 buscar denuncia existente
+    const denuncia = await Denuncia.findById(id);
 
-const complaint = req.body
+    if (!denuncia) {
+      return res.status(404).json({ error: "Denuncia no encontrada" });
+    }
 
-// 💾 GUARDAR EN DB
-const ultima = await Denuncia.findOne().sort({numero:-1})
-const numero = ultima ? ultima.numero + 1 : 1
+    // 🖼️ membrete (opcional)
+    const letterheadPath = path.join(process.cwd(), "public", "membrete.png");
 
-const nuevaDenuncia = await Denuncia.create({
-...complaint,
-numero
-})
+    let letterheadBase64 = null;
 
+    if (fs.existsSync(letterheadPath)) {
+      letterheadBase64 = fs.readFileSync(letterheadPath, {
+        encoding: "base64",
+      });
+    }
 
+    // 🧾 generar HTML
+    const html = generatePDFTemplate(denuncia, letterheadBase64);
 
-// ruta correcta del membrete
-const letterheadPath = path.join(process.cwd(), "public", "membrete.png")
+    // 🚀 puppeteer
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
 
-if(!fs.existsSync(letterheadPath)){
-throw new Error("No se encontró el archivo membrete.png en /public")
-}
+    const page = await browser.newPage();
 
-const letterheadBase64 = fs.readFileSync(letterheadPath,{
-encoding:"base64"
-})
+    await page.setContent(html, {
+      waitUntil: "domcontentloaded",
+    });
 
-const html = generatePDFTemplate(complaint, letterheadBase64)
+    // 📄 PDF
+    const pdf = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "10mm",
+        bottom: "10mm",
+        left: "10mm",
+        right: "10mm",
+      },
+    });
 
-// lanzar navegador
-const browser = await puppeteer.launch({
-headless: "new",
-args:["--no-sandbox","--disable-setuid-sandbox"]
-})
+    await browser.close();
 
-const page = await browser.newPage()
+    // 📤 response
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=denuncia-${denuncia.numero}.pdf`
+    );
 
-await page.setContent(html,{
-waitUntil:"domcontentloaded"
-})
+    res.end(pdf);
 
-// generar pdf
-const pdf = await page.pdf({
-format:"A4",
-printBackground:true,
-margin:{
-top:"0mm",
-bottom:"0mm",
-left:"0mm",
-right:"0mm"
-}
-})
+  } catch (err) {
+    console.error("ERROR PDF:", err);
 
-await browser.close()
-
-res.setHeader("Content-Type","application/pdf")
-res.setHeader("Content-Disposition","attachment; filename=denuncia.pdf")
-
-res.end(pdf)
-
-}catch(err){
-
-console.error("ERROR PDF:", err)
-
-res.status(500).json({
-error:err.message
-})
-
-}
-
-}
+    res.status(500).json({
+      error: err.message || "Error generando PDF",
+    });
+  }
+};

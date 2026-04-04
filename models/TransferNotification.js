@@ -30,7 +30,22 @@ const transferNotificationSchema = new mongoose.Schema({
   message: {
     type: String,
     default: ''
+  },
+
+  // 🔥 NUEVO → guarda si se pagó la multa
+  multaPagada: {
+    type: String,
+    enum: ['si', 'no'],
+    default: null
+  },
+
+  // 🔥 NUEVO → para diferenciar archivo / instructor
+  areaDecision: {
+    type: String,
+    enum: ['archivo', 'instructor'],
+    default: null
   }
+
 }, {
   timestamps: true
 });

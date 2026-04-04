@@ -9,6 +9,8 @@ import transferRoutes from "./routes/transfers.js";
 import expedientesRoutes from "./routes/expedientes.js";
 import usersRoutes from "./routes/users.js";
 import denunciasRoutes from "./routes/denuncias.js";
+import statsRoutes from "./routes/stats.js";
+
 
 
 
@@ -57,6 +59,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/expedientes", expedientesRoutes);
 app.use("/api/denuncias", denunciasRoutes);
 app.use("/api/transfers", transferRoutes);
+app.use("/api/stats", statsRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api", rutas()); // otras rutas agrupadas
 

@@ -46,23 +46,29 @@ router.get("/mis-expedientes", auth, async (req, res) => {
   try {
     const userId = req.user._id;
 
-    const expedientes = await Expediente.find({ userId })
+    const expedientes = await Expediente.find({
+      $or: [
+        { userId: userId },       // asignados a mí
+        
+      ],
+    })
       .sort({ createdAt: -1 })
       .populate("userId", "name username area")
       .populate("createdBy", "name username area")
       .populate("conciliadorAsignado", "name username area");
 
-
     res.json(expedientes);
   } catch (err) {
+    console.error("Error mis expedientes:", err);
     res.status(500).json({ message: "Error obteniendo mis expedientes" });
   }
 });
 
 /* ✅ TODOS LOS EXPEDIENTES CON FILTROS */
+/* ✅ TODOS LOS EXPEDIENTES CON FILTROS */
 router.get("/", auth, async (req, res) => {
   try {
-    const { search, area, estado } = req.query;
+    const { search, area, estado, limit } = req.query;
 
     console.log(">> /api/expedientes - req.user:", req.user._id);
     console.log(">> /api/expedientes - req.query:", req.query);
@@ -72,10 +78,12 @@ router.get("/", auth, async (req, res) => {
 
     let filter = {};
 
+    // 🔒 CONTROL POR ROL
     if (role !== "admin" && userArea !== "mesa_entrada") {
       filter.area = userArea;
     }
 
+    // 📍 FILTRO POR ÁREA
     if (area && area !== "all") {
       const requestedArea = String(area).toLowerCase();
       if (role === "admin" || userArea === "mesa_entrada") {
@@ -83,9 +91,11 @@ router.get("/", auth, async (req, res) => {
       }
     }
 
+    // 🔍 BUSCADOR
     if (search) {
       const regex = { $regex: search, $options: "i" };
       const or = [{ nombre: regex }, { numero: regex }];
+
       if (Object.keys(filter).length > 0) {
         filter = { $and: [filter, { $or: or }] };
       } else {
@@ -93,19 +103,31 @@ router.get("/", auth, async (req, res) => {
       }
     }
 
+    // 📊 ESTADO
     if (estado && estado !== "all") {
       if (filter.$and) filter.$and.push({ estado });
       else if (filter.$or) filter = { $and: [{ $or: filter.$or }, { estado }] };
       else filter.estado = estado;
     }
 
-    const expedientes = await Expediente.find(filter)
+    // 🚀 QUERY BASE
+    let query = Expediente.find(filter)
       .populate("userId", "name username area")
       .populate("createdBy", "name username area")
       .populate("conciliadorAsignado", "name username area")
       .sort({ createdAt: -1 });
 
+    // ✅ 🔥 LIMIT INTELIGENTE
+    const limitNumber = Math.min(Number(limit) || 0, 50);
+
+    if (limitNumber > 0) {
+      query = query.limit(limitNumber);
+    }
+
+    const expedientes = await query;
+
     return res.json(expedientes);
+
   } catch (error) {
     console.error("❌ Error GET /expedientes:", error);
     return res.status(500).json({ message: "Error del servidor" });
@@ -131,6 +153,8 @@ router.post("/", auth, async (req, res) => {
       areaActual,
       fechaCreacion,
       horaCreacion,
+      usuarioAsignado, // 👈 VIENE DEL FRONT
+      currentHolder,
     } = req.body;
 
     // Verificar duplicado
@@ -139,8 +163,19 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ message: "El número de expediente ya existe" });
     }
 
-    // Asignar conciliador por rotación
-    const conciliador = await getNextConciliador();
+    let conciliador;
+
+    // ✅ SI EL USUARIO ELIGIÓ UNO → usar ese
+    if (usuarioAsignado) {
+      conciliador = await User.findById(usuarioAsignado);
+
+      if (!conciliador) {
+        return res.status(404).json({ message: "Conciliador no encontrado" });
+      }
+    } else {
+      // ✅ SI NO → usar rotación automática
+      conciliador = await getNextConciliador();
+    }
 
     const expediente = new Expediente({
       numero,
@@ -151,13 +186,15 @@ router.post("/", auth, async (req, res) => {
       caratula,
       caratulaType,
       descripcion,
-      estado: estado || "activo",
+      estado,
       prioridad,
       articulo,
       localidad,
       createdBy: req.user._id,
-      userId: conciliador._id, // asignado al conciliador
-      conciliadorAsignado: conciliador._id,  
+
+      userId: conciliador._id,
+      conciliadorAsignado: conciliador._id,
+currentHolder: conciliador._id,
       areaActual: "conciliacion",
       fechaCreacion,
       horaCreacion,
@@ -165,13 +202,12 @@ router.post("/", auth, async (req, res) => {
 
     await expediente.save();
 
-    // Crear notificación automática
     const notification = new TransferNotification({
       expedienteId: expediente._id,
       fromUserId: req.user._id,
       toUserId: conciliador._id,
       toArea: "conciliacion",
-      message: `Expediente asignado automáticamente: ${expediente.numero}`,
+      message: `Expediente asignado: ${expediente.numero}`,
       status: "pending",
     });
 
@@ -187,6 +223,29 @@ router.post("/", auth, async (req, res) => {
       message: "Error al crear expediente",
       error: error.message,
     });
+  }
+});
+
+/* ✅ ACTUALIZAR EXPEDIENTE */
+
+router.put('/expedientes/:id/estado', async (req, res) => {
+  try {
+    const { estado } = req.body;
+
+    const expediente = await Expediente.findById(req.params.id);
+
+    if (!expediente) {
+      return res.status(404).json({ msg: 'No encontrado' });
+    }
+
+    expediente.estado = estado; // 👈 GUARDA EL NUEVO
+
+    await expediente.save();
+
+    res.json(expediente);
+
+  } catch (err) {
+    res.status(500).json({ msg: err.message });
   }
 });
 

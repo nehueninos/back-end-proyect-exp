@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import { Schema, model } from "mongoose";
 const AREAS = ["mesa_entrada", "conciliacion", "despacho", "archivo", "ejecucion"];
-const ESTADOS = ["activo", "archivado", "finalizado"];
 const PRIORIDAD =  ['baja', 'media', 'alta'];
 const ARTICULO = ['1', '2', '3', '4', '5', '6'];
 const LOCALIDAD = [
@@ -38,7 +37,7 @@ const expedienteSchema = new mongoose.Schema(
     caratula: { type: String }, // Puede ser URL o base64
     caratulaType: { type:  String },
     descripcion: {type: String, default: ''},
-    estado: { type: String, enum: ESTADOS, default: "activo" },
+    estado: { type: String },
     prioridad: { type: String, default: "media", enum: PRIORIDAD },
     articulo: {type: String, required: true, enum: ARTICULO },
     localidad: {type: String, required: true, enum: LOCALIDAD },
@@ -54,11 +53,13 @@ const expedienteSchema = new mongoose.Schema(
  * 📌 Virtuals para formatear fecha/hora automáticamente
  */
 expedienteSchema.virtual("fechaCreacion").get(function () {
-  return this.createdAt.toLocaleDateString("es-ES");
+  if (!this.createdAt) return "";
+  return new Date(this.createdAt).toLocaleDateString("es-ES");
 });
 
 expedienteSchema.virtual("horaCreacion").get(function () {
-  return this.createdAt.toLocaleTimeString("es-ES", {
+  if (!this.createdAt) return "";
+  return new Date(this.createdAt).toLocaleTimeString("es-ES", {
     hour: "2-digit",
     minute: "2-digit",
   });

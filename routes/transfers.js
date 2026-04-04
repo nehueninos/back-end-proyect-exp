@@ -5,17 +5,17 @@ import TransferNotification from "../models/TransferNotification.js";
 import ExpedienteHistory from "../models/ExpedienteHistory.js";
 import auth from "../middlewares/auth.js";
 
-
 const router = express.Router();
 
 /**
- * ✅ Crear solicitud de transferencia — ASIGNA AUTOMÁTICAMENTE A UN CONCILIADOR RANDOM
+ * ✅ Crear solicitud de transferencia
+ * 🔥 AHORA GUARDA multaPagada + areaDecision
  */
 router.post("/request", auth, async (req, res) => {
   console.log("TRANSFER BODY:", req.body);
 
   try {
-    const { expedienteId, toUserId, message } = req.body;
+    const { expedienteId, toUserId, message, multaPagada, areaDecision } = req.body;
 
     if (!expedienteId) {
       return res.status(400).json({ message: "expedienteId es obligatorio" });
@@ -26,22 +26,18 @@ router.post("/request", auth, async (req, res) => {
       return res.status(404).json({ message: "Expediente no encontrado" });
     }
 
-    // ✅ Solo puede transferir quien lo tiene asignado ahora
     if (expediente.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "No tienes permisos para transferir este expediente" });
     }
 
     let destinationUser = null;
 
-    // ✅ 1️⃣ Transferencia manual (se usa el usuario enviado por el front)
     if (toUserId) {
       destinationUser = await User.findById(toUserId);
       if (!destinationUser) {
         return res.status(404).json({ message: "Usuario destinatario no encontrado" });
       }
-    } 
-    // ✅ 2️⃣ Transferencia automática (se elige conciliador random)
-    else {
+    } else {
       const conciliadores = await User.find({ role: "user", area: "conciliacion" });
 
       if (conciliadores.length === 0) {
@@ -51,7 +47,7 @@ router.post("/request", auth, async (req, res) => {
       destinationUser = conciliadores[Math.floor(Math.random() * conciliadores.length)];
     }
 
-    // ✅ Crear la notificación
+    // 🔥 NUEVO: guardamos multa + área
     const notification = new TransferNotification({
       expedienteId: expediente._id,
       fromUserId: req.user._id,
@@ -59,6 +55,8 @@ router.post("/request", auth, async (req, res) => {
       toArea: destinationUser.area,
       message: message || `Transferencia automática a ${destinationUser.name}`,
       status: "pending",
+      multaPagada: multaPagada || null,
+      areaDecision: areaDecision || null,
     });
 
     await notification.save();
@@ -76,6 +74,40 @@ router.post("/request", auth, async (req, res) => {
   }
 });
 
+/**
+ * ✅ ESTADÍSTICAS DE MULTAS 🔥
+ */
+router.get("/stats/multas", auth, async (req, res) => {
+  try {
+    const stats = await TransferNotification.aggregate([
+      {
+        $match: {
+          multaPagada: { $in: ["si", "no"] },
+          areaDecision: { $in: ["archivo", "instructor"] }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            area: "$areaDecision",
+            multa: "$multaPagada"
+          },
+          total: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json(stats);
+
+  } catch (error) {
+    console.error("❌ Error en stats multas:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * ✅ Pendientes
+ */
 router.get('/pendientes', auth, async (req, res) => {
   try {
     const pendientes = await TransferNotification.find({
@@ -83,8 +115,8 @@ router.get('/pendientes', auth, async (req, res) => {
       status: "pending",
     })
       .populate("expedienteId")
-      .populate("fromUserId", "name area") // ✅ origen
-      .populate("toUserId", "name area")   // ✅ destino
+      .populate("fromUserId", "name area")
+      .populate("toUserId", "name area")
       .sort({ createdAt: -1 });
 
     res.json(pendientes);
@@ -93,9 +125,8 @@ router.get('/pendientes', auth, async (req, res) => {
   }
 });
 
-
 /**
- * ✅ Notificaciones pendientes
+ * ✅ Notificaciones
  */
 router.get("/notifications", auth, async (req, res) => {
   try {
@@ -117,6 +148,8 @@ router.get("/notifications", auth, async (req, res) => {
       message: notif.message,
       created_at: notif.createdAt,
       updated_at: notif.updatedAt,
+      multaPagada: notif.multaPagada,       // 🔥 NUEVO
+      areaDecision: notif.areaDecision,     // 🔥 NUEVO
     }));
 
     res.json(formatted);
@@ -128,7 +161,7 @@ router.get("/notifications", auth, async (req, res) => {
 });
 
 /**
- * ✅ Aceptar transferencia (SIN random)
+ * ✅ Aceptar transferencia
  */
 router.post("/accept/:notificationId", auth, async (req, res) => {
   try {
@@ -140,24 +173,20 @@ router.post("/accept/:notificationId", auth, async (req, res) => {
     }
 
     if (notification.toUserId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "No tienes permisos para aceptar esta transferencia" });
+      return res.status(403).json({ message: "No tienes permisos" });
     }
 
     const expediente = notification.expedienteId;
 
-    // ✅ Guardamos área anterior ANTES de modificar
     const oldArea = expediente.areaActual;
 
-    // ✅ Aceptamos el pase
     expediente.userId = req.user._id;
     expediente.areaActual = req.user.area;
     await expediente.save();
 
-    // ✅ Cambiamos la notificación
     notification.status = "accepted";
     await notification.save();
 
-    // ✅ Guardar historial
     const history = new ExpedienteHistory({
       expedienteId: expediente._id,
       fromArea: oldArea,
@@ -169,7 +198,6 @@ router.post("/accept/:notificationId", auth, async (req, res) => {
 
     await history.save();
 
-    // ✅ Enviar UNA sola respuesta
     return res.json({
       success: true,
       message: "Transferencia aceptada",
@@ -178,14 +206,12 @@ router.post("/accept/:notificationId", auth, async (req, res) => {
 
   } catch (error) {
     console.error("❌ Error en POST /accept:", error);
-
     return res.status(400).json({
       success: false,
       message: error.message,
     });
   }
 });
-
 
 /**
  * ✅ Rechazar transferencia
@@ -199,7 +225,7 @@ router.post("/reject/:notificationId", auth, async (req, res) => {
     }
 
     if (notification.toUserId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "No tienes permisos para rechazar esta transferencia" });
+      return res.status(403).json({ message: "No tienes permisos" });
     }
 
     notification.status = "rejected";

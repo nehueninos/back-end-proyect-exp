@@ -14,8 +14,9 @@ padding:0;
 box-sizing:border-box;
 }
 
+/* ✅ FORMATO OFICIO */
 @page{
-size:A4;
+size:216mm 356mm;
 margin:0;
 }
 
@@ -27,9 +28,10 @@ color:#000;
 background:white;
 }
 
+/* ✅ TAMAÑO OFICIO */
 .page{
-width:210mm;
-min-height:297mm;
+width:216mm;
+min-height:356mm;
 padding:20mm 20mm 25mm 20mm;
 position:relative;
 background:white;
@@ -49,7 +51,9 @@ z-index:0;
 position:relative;
 z-index:1;
 padding-top:100px;
-width:170mm;
+
+/* un poco más ancho que A4 */
+width:175mm;
 margin:auto;
 }
 
@@ -81,7 +85,7 @@ margin-bottom:10px;
 }
 
 .signature-section{
-margin-top:60px;
+margin-top:80px; /* más espacio porque la hoja es más larga */
 text-align:center;
 }
 
@@ -94,7 +98,7 @@ margin:40px auto 5px auto;
 .linea{
 display:inline-block;
 min-width:180px;
-max-width:170mm;
+max-width:175mm;
 border-bottom:1px dotted #000;
 text-align:center;
 padding:0 4px;
@@ -108,7 +112,7 @@ min-width:100px;
 
 .linea-larga{
 min-width:300px;
-max-width:170mm;
+max-width:175mm;
 word-break:break-word;
 }
 
@@ -132,7 +136,7 @@ horas del día
 <span class="linea linea-corta">${complaint.dia || ""}</span> 
 de 
 <span class="linea linea-corta">${complaint.mes || ""}</span> 
-del año ${complaint.anio || "2025"}, 
+del año ${complaint.anio || "2026"}, 
 se hace presente ante esta SUBSECRETARIA DE DEFENSA AL CONSUMIDOR Y USUARIO,
 el Sr./Sra 
 <span class="linea">${complaint.nombreCompleto || ""}</span> 

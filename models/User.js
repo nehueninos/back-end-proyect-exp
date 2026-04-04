@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
 const ROLES = ["admin", "user"];
-const AREAS = ["mesa_entrada", "conciliacion", "despacho", "archivo", "ejecucion"];
+const AREAS = ["mesa_entrada", "conciliacion", "despacho", "archivo", "ejecucion", "notificador", "instructor"];
 
 const userSchema = new mongoose.Schema(
   {
